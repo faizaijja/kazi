@@ -493,14 +493,14 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
             align-items: center;
             gap: 4px;
             font-size: 12px;
-            color: var(--primary);
+            color: #1a1f33;
             margin-top: 8px;
         }
 
         .book-btn {
             width: 100%;
             padding: 10px;
-            background: var(--primary);
+            background: #1a1f33;
             color: white;
             border: none;
             border-radius: 8px;
@@ -819,3 +819,4 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
 </body>
 
 </html>
+
