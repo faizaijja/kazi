@@ -2,22 +2,19 @@
 
 session_start();
 
-
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit();
 }
 
-
 $user_id = $_SESSION['user_id'];
 $user_email = $_SESSION['email'];
 $user_type = $_SESSION['user_type'] ?? 'client';
 
-
 function getDbConnection()
 {
     $host = "localhost";
-    $dbname = "supermarket";
+    $dbname = "kazi";
     $username = "root";
     $password = "";
 
@@ -26,75 +23,90 @@ function getDbConnection()
         $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         return $conn;
     } catch (PDOException $e) {
-
         error_log("DB Connection failed: " . $e->getMessage());
         die("Database connection failed.");
     }
 }
 
-// service statistics
-function getProductStats()
+// Service provider statistics
+function getServiceProviderStats()
 {
     $conn = getDbConnection();
 
     $stats = [
-        'total_products' => 0,
-        'low_stock' => 0,
-        'out_of_stock' => 0,
-        'sales_today' => 0
+        'total_providers' => 0,
+        'available_providers' => 0,
+        'verified_providers' => 0,
+        'bookings_today' => 0
     ];
 
     try {
-        $stmt = $conn->query("SELECT COUNT(*) FROM products");
-        $stats['total_products'] = (int) $stmt->fetchColumn();
+        $stmt = $conn->query("SELECT COUNT(*) FROM providers");
+        $stats['total_providers'] = (int) $stmt->fetchColumn();
 
-        $stmt = $conn->query("SELECT COUNT(*) FROM products WHERE quantity <= COALESCE(reorder_level, 10) AND quantity > 0");
-        $stats['low_stock'] = (int) $stmt->fetchColumn();
+        $stmt = $conn->query("SELECT COUNT(*) FROM providers WHERE availability_status = 'available'");
+        $stats['available_providers'] = (int) $stmt->fetchColumn();
 
-        $stmt = $conn->query("SELECT COUNT(*) FROM products WHERE quantity = 0");
-        $stats['out_of_stock'] = (int) $stmt->fetchColumn();
+        $stmt = $conn->query("SELECT COUNT(*) FROM providers WHERE verification_status = 'verified'");
+        $stats['verified_providers'] = (int) $stmt->fetchColumn();
 
         $today = date('Y-m-d');
-        $stmt = $conn->prepare("SELECT COALESCE(SUM(total), 0) AS sales_today FROM transactions WHERE DATE(transaction_date) = ?");
+        $stmt = $conn->prepare("SELECT COUNT(*) FROM bookings WHERE DATE(booking_date) = ?");
         $stmt->execute([$today]);
-        $stats['sales_today'] = (float) $stmt->fetchColumn();
+        $stats['bookings_today'] = (int) $stmt->fetchColumn();
     } catch (PDOException $e) {
-        error_log("Error getting product stats: " . $e->getMessage());
+        error_log("Error getting service provider stats: " . $e->getMessage());
     }
 
     return $stats;
 }
 
-
-function getFeaturedProducts($limit = 10)
+// Get featured service providers
+function getFeaturedServiceProviders($limit = 10)
 {
     $conn = getDbConnection();
 
     try {
         $query = "SELECT 
-                    p.product_id as id, 
-                    p.prod_name as name, 
-                    p.category, 
-                    p.unit_price as price, 
-                    p.quantity, 
-                    p.image_path, 
-                    COALESCE(p.reorder_level, 10) as reorder_level 
-                  FROM products p
-                  ORDER BY p.product_id DESC
+                    provider_id AS id,
+                    business_name AS name,
+                    bio,
+                    years_of_experience,
+                    hourly_rate AS price,
+                    availability_status,
+                    rating_average,
+                    total_jobs_completed,
+                    verification_status,
+                    category_id
+                  FROM service_providers
+                  ORDER BY rating_average DESC, total_jobs_completed DESC
                   LIMIT :limit";
 
         $stmt = $conn->prepare($query);
         $stmt->bindValue(':limit', (int) $limit, PDO::PARAM_INT);
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $providers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Optional defaults
+        foreach ($providers as &$provider) {
+            $provider['bio'] = $provider['bio'] ?? '';
+            $provider['category'] = 'General Services'; // Default
+            $provider['profile_picture'] = 'images/default-avatar.png'; // Default
+            $provider['rating_average'] = $provider['rating_average'] ?? 0;
+            $provider['years_of_experience'] = $provider['years_of_experience'] ?? 0;
+            $provider['total_jobs_completed'] = $provider['total_jobs_completed'] ?? 0;
+        }
+
+        return $providers;
+
     } catch (PDOException $e) {
-        error_log("Error getting featured products: " . $e->getMessage());
+        error_log("Error getting featured service providers: " . $e->getMessage());
         return [];
     }
 }
 
-
+// Notification functions remain the same
 function createNotificationsTable()
 {
     $conn = getDbConnection();
@@ -119,14 +131,12 @@ function createNotificationsTable()
     }
 }
 
-
 function checkOutOfStockProducts()
 {
     $conn = getDbConnection();
     $newNotificationsCreated = 0;
 
     try {
-        // Out of stock products
         $sql = "SELECT product_id, prod_name FROM products WHERE quantity = 0";
         $stmt = $conn->prepare($sql);
         $stmt->execute();
@@ -151,37 +161,6 @@ function checkOutOfStockProducts()
                 $newNotificationsCreated++;
             }
         }
-
-        // Low stock products (quantity <= reorder_level and > 0)
-        $lowStockSql = "SELECT product_id, prod_name, quantity, COALESCE(reorder_level, 10) AS reorder_level 
-                        FROM products 
-                        WHERE quantity <= COALESCE(reorder_level, 10) AND quantity > 0";
-        $lowStockStmt = $conn->prepare($lowStockSql);
-        $lowStockStmt->execute();
-        $lowStockProducts = $lowStockStmt->fetchAll(PDO::FETCH_ASSOC);
-
-        foreach ($lowStockProducts as $product) {
-            $checkStmt = $conn->prepare("
-                SELECT COUNT(*) FROM notifications 
-                WHERE product_id = ? 
-                AND type = 'low_stock' 
-                AND message LIKE ?
-                AND created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)
-            ");
-            $likePattern = '%running low on stock%';
-            $checkStmt->execute([$product['product_id'], $likePattern]);
-
-            if ((int) $checkStmt->fetchColumn() === 0) {
-                $insertStmt = $conn->prepare("
-                    INSERT INTO notifications (product_id, message, type, is_read, created_at) 
-                    VALUES (?, ?, 'low_stock', 0, NOW())
-                ");
-                $message = "Product '{$product['prod_name']}' is running low on stock (Only {$product['quantity']} left)";
-                $insertStmt->execute([$product['product_id'], $message]);
-                $newNotificationsCreated++;
-            }
-        }
-
     } catch (PDOException $e) {
         error_log("Error checking out of stock products: " . $e->getMessage());
     }
@@ -189,7 +168,6 @@ function checkOutOfStockProducts()
     return $newNotificationsCreated;
 }
 
-// pending notifications for the user
 function getUserNotifications($userId)
 {
     $conn = getDbConnection();
@@ -211,7 +189,6 @@ function getUserNotifications($userId)
     }
 }
 
-// Get unread notification count
 function getUnreadNotificationCount($userId)
 {
     $conn = getDbConnection();
@@ -232,28 +209,28 @@ function getUnreadNotificationCount($userId)
 // Initialize and fetch data
 createNotificationsTable();
 $newNotifications = checkOutOfStockProducts();
-$productStats = getProductStats();
-$featuredProducts = getFeaturedProducts(10);
+$serviceProviderStats = getServiceProviderStats();
+$featuredProviders = getFeaturedServiceProviders(10);
 $notificationCount = getUnreadNotificationCount((int) $_SESSION['user_id']);
 $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
 
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
     <title>Kazi Portal</title>
 
     <style>
-        /* Inline critical CSS for notifications (kept minimal) */
         :root {
             --danger: #e53935;
             --warning: #FF9800;
             --success: #4CAF50;
+            --primary: #2196F3;
         }
 
         .notification-bell-container {
@@ -372,7 +349,6 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
             color: #999;
         }
 
-        /* Simple layout fallback so page doesn't look broken without your custom CSS */
         .layout-container {
             display: flex;
             min-height: 100vh;
@@ -404,73 +380,179 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
             background: #f7f9fc;
         }
 
-        .product-card {
-            width: 200px;
+        .provider-card {
+            width: 280px;
             display: inline-block;
-            margin: 8px;
+            margin: 12px;
             vertical-align: top;
             background: #fff;
-            padding: 12px;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .provider-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+        }
+
+        .provider-img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 50%;
+            margin: 0 auto 12px;
+            display: block;
+            border: 3px solid #f0f0f0;
+        }
+
+        .provider-name {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            text-align: center;
+        }
+
+        .provider-category {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .provider-bio {
+            font-size: 13px;
+            color: #555;
+            line-height: 1.5;
+            margin: 8px 0;
+            height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .provider-stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 12px 0;
+            padding: 12px 0;
+            border-top: 1px solid #f0f0f0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-weight: 700;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+        }
+
+        .provider-rate {
+            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 8px 0;
+        }
+
+        .availability-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .availability-badge.available {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .availability-badge.unavailable {
+            background: #fdecea;
+            color: #c62828;
+        }
+
+        .availability-badge.busy {
+            background: #fff4e5;
+            color: #e65100;
+        }
+
+        .verified-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--primary);
+            margin-top: 8px;
+        }
+
+        .book-btn {
+            width: 100%;
+            padding: 10px;
+            background: var(--primary);
+            color: white;
+            border: none;
             border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+            transition: background 0.2s;
+        }
+
+        .book-btn:hover {
+            background: #1976D2;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
         }
 
-        .product-img {
-            width: 100%;
-            height: 120px;
-            object-fit: cover;
-            border-radius: 6px;
+        .stat-card h4 {
+            margin: 0 0 8px 0;
+            color: #666;
+            font-size: 14px;
+            font-weight: 600;
         }
 
-        .stock-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            margin-top: 6px;
-        }
-
-        .stock-badge.out-of-stock {
-            background: #fdecea;
-            color: #b71c1c;
-        }
-
-        .stock-badge.low-stock {
-            background: #fff4e5;
-            color: #bf6b00;
-        }
-
-        .stock-badge.in-stock {
-            background: #e8f5e9;
-            color: #1b5e20;
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
         }
     </style>
 </head>
 
 <body>
-    <!-- Debug info (toggle with ?debug=1 in URL) -->
-    <?php if (isset($_GET['debug'])): ?>
-        <div style="background:#fff8e1;padding:12px;border:1px solid #ffe08a;margin:10px;">
-            <strong>Debug Info:</strong><br>
-            New notifications created: <?php echo (int) $newNotifications; ?><br>
-            Total unread notifications: <?php echo (int) $notificationCount; ?><br>
-            Out of stock products: <?php echo (int) $productStats['out_of_stock']; ?><br>
-            Low stock products: <?php echo (int) $productStats['low_stock']; ?>
-        </div>
-    <?php endif; ?>
-
     <div class="layout-container">
         <div class="side-nav">
             <div class="brand">
                 <h1 style="margin:0 0 12px 0;">Kazi</h1>
-
             </div>
 
             <nav class="nav-links" style="margin-top:12px;">
                 <a href="supermarket.php" style="text-decoration:none;color:inherit;display:block;padding:8px 0;">
-                    <div class="nav-item active" data-id="home">
-                        <span>Dashboard</span>
-                    </div>
+                    <div class="nav-item active" data-id="home"><span>Dashboard</span></div>
                 </a>
                 <a href="providers.php" style="text-decoration:none;color:inherit;display:block;padding:8px 0;">
                     <div class="nav-item" data-id="inventory"><span>Categories</span></div>
@@ -532,17 +614,10 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
                                         <div class="notification-item <?php echo $notification['is_read'] ? '' : 'unread'; ?>"
                                             data-id="<?php echo (int) $notification['id']; ?>">
                                             <div class="notification-icon">
-                                                <?php if ($notification['type'] === 'low_stock'): ?>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18"
-                                                        height="18" fill="none" stroke="currentColor" stroke-width="2">
-                                                        <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"></path>
-                                                    </svg>
-                                                <?php else: ?>
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18"
-                                                        height="18" fill="none" stroke="currentColor" stroke-width="2">
-                                                        <circle cx="12" cy="12" r="10"></circle>
-                                                    </svg>
-                                                <?php endif; ?>
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18"
+                                                    height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                </svg>
                                             </div>
                                             <div class="notification-content">
                                                 <p><?php echo htmlspecialchars($notification['message']); ?></p>
@@ -570,7 +645,8 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
                             <p style="margin:0;font-weight:700;">GS</p>
                         </div>
                         <div class="user-info">
-                            <span class="user-role"><?php echo htmlspecialchars(ucfirst($_SESSION['role'])); ?></span>
+                            <span
+                                class="user-role"><?php echo htmlspecialchars(ucfirst($_SESSION['user_type'])); ?></span>
                         </div>
                     </div>
                 </div>
@@ -578,65 +654,97 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
 
             <div class="main-content">
                 <div class="content-area">
+
+
                     <div class="featured-section">
-                        <h3 style="margin-top:0;">Browse jobs</h3>
-                        <div class="product-carousel" id="productCarousel" style="display:flex;flex-wrap:wrap;">
-                            <?php foreach ($featuredProducts as $product): ?>
-                                <?php
-                                // Determine stock status and percentage
-                                $stockStatus = 'Available';
-                                $stockPercentage = 100;
-                                $qty = (int) $product['quantity'];
-                                $reorder = (int) $product['reorder_level'];
-
-                                if ($qty <= 0) {
-                                    $stockStatus = 'Unavailable';
-                                    $stockPercentage = 0;
-                                } elseif ($qty <= $reorder) {
-                                    $stockStatus = 'Unavailable';
-                                    $stockPercentage = 30;
-                                }
-
-                                // Handle image path more robustly
-                                $imagePath = 'images/placeholder.jpg'; // default
-                                if (!empty($product['image_path'])) {
-                                    // use basename to avoid directory traversal
-                                    $candidate = 'images/' . basename($product['image_path']);
-                                    if (file_exists($candidate)) {
-                                        $imagePath = $candidate;
-                                    }
-                                }
-                                ?>
-                                <div class="product-card" data-id="<?php echo (int) $product['id']; ?>">
-                                    <img src="<?php echo htmlspecialchars($imagePath); ?>"
-                                        alt="<?php echo htmlspecialchars($product['name']); ?>" class="product-img">
-                                    <h4 class="product-name" style="margin:8px 0 4px 0;">
-                                        <?php echo htmlspecialchars($product['name']); ?>
-                                    </h4>
-                                    <p class="price" style="margin:0 0 6px 0;">
-                                        <?php echo number_format((float) $product['price'], 0); ?> rwf
-                                    </p>
+                        <h3 style="margin-top:0;">Browse Service Providers</h3>
+                        <div class="provider-carousel" id="providerCarousel"
+                            style="display:flex;flex-wrap:wrap; gap:16px;">
+                            <?php if (!empty($featuredProviders)): ?>
+                                <?php foreach ($featuredProviders as $provider): ?>
                                     <?php
-                                    $badgeClass = 'in-stock';
-                                    if (strtolower($stockStatus) === 'unavailable')
-                                        $badgeClass = 'out-of-stock';
-                                    if (strtolower($stockStatus) === 'available')
-                                        $badgeClass = 'low-stock';
-                                    ?>
-                                    <span class="stock-badge <?php echo $badgeClass; ?>"><?php echo $stockStatus; ?></span>
+                                    // Ensure defaults
+                                    $providerName = htmlspecialchars($provider['name'] ?? 'Unnamed Provider');
+                                    $providerCategory = htmlspecialchars($provider['category'] ?? 'General Services');
+                                    $providerBio = htmlspecialchars($provider['bio'] ?? 'No bio available.');
+                                    $yearsExp = (int) ($provider['years_of_experience'] ?? 0);
+                                    $jobsCompleted = (int) ($provider['total_jobs_completed'] ?? 0);
+                                    $rating = number_format((float) ($provider['rating_average'] ?? 0), 1);
+                                    $price = number_format((float) ($provider['price'] ?? 0), 0);
 
-                                    <div class="stock-indicator" style="margin-top:8px;">
-                                        <div class="stock-bar"
-                                            style="background:#f1f1f1;border-radius:6px;height:10px;overflow:hidden;">
-                                            <div class="stock-progress"
-                                                style="width:<?php echo (int) $stockPercentage; ?>%;height:10px;background:<?php echo ($stockPercentage === 0) ? 'var(--danger)' : ($stockPercentage <= 30 ? 'var(--warning)' : 'var(--success)'); ?>;">
+                                    // Image handling
+                                    $imagePath = 'images/default-avatar.png';
+                                    if (!empty($provider['image_path'])) {
+                                        $candidate = 'images/' . basename($provider['image_path']);
+                                        if (file_exists($candidate)) {
+                                            $imagePath = $candidate;
+                                        }
+                                    }
+
+                                    // Availability badge
+                                    $availabilityClass = 'unavailable';
+                                    $availabilityText = 'Unavailable';
+                                    if (!empty($provider['availability_status'])) {
+                                        switch ($provider['availability_status']) {
+                                            case 'available':
+                                                $availabilityClass = 'available';
+                                                $availabilityText = 'Available';
+                                                break;
+                                            case 'busy':
+                                                $availabilityClass = 'busy';
+                                                $availabilityText = 'Busy';
+                                                break;
+                                        }
+                                    }
+
+                                    $verified = ($provider['verification_status'] ?? '') === 'verified';
+                                    ?>
+                                    <div class="provider-card" data-id="<?php echo (int) $provider['id']; ?>">
+                                        <img src="<?php echo $imagePath; ?>" alt="<?php echo $providerName; ?>"
+                                            class="provider-img">
+                                        <h4 class="provider-name"><?php echo $providerName; ?></h4>
+                                        <p class="provider-category"><?php echo $providerCategory; ?></p>
+                                        <p class="provider-bio"><?php echo $providerBio; ?></p>
+
+                                        <div class="provider-stats">
+                                            <div class="stat-item">
+                                                <div class="stat-value">⭐ <?php echo $rating; ?></div>
+                                                <div class="stat-label">Rating</div>
+                                            </div>
+                                            <div class="stat-item">
+                                                <div class="stat-value"><?php echo $yearsExp; ?>y</div>
+                                                <div class="stat-label">Experience</div>
+                                            </div>
+                                            <div class="stat-item">
+                                                <div class="stat-value"><?php echo $jobsCompleted; ?></div>
+                                                <div class="stat-label">Jobs</div>
                                             </div>
                                         </div>
-                                        <span class="stock-text"
-                                            style="font-size:12px;display:inline-block;margin-top:6px;"><?php echo (int) $stockPercentage; ?>%</span>
+
+                                        <div class="provider-rate"><?php echo $price; ?> RWF/hr</div>
+
+                                        <div style="text-align:center;">
+                                            <span
+                                                class="availability-badge <?php echo $availabilityClass; ?>"><?php echo $availabilityText; ?></span>
+                                            <?php if ($verified): ?>
+                                                <div class="verified-badge">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                                        <path
+                                                            d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                                                    </svg>
+                                                    Verified
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+
+                                        <button class="book-btn"
+                                            onclick="bookProvider(<?php echo (int) $provider['id']; ?>)">Book Now</button>
                                     </div>
-                                </div>
-                            <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <p style="padding:16px;text-align:center;color:#888;width:100%;">No service providers found.
+                                </p>
+                            <?php endif; ?>
                         </div>
                     </div>
 
@@ -645,36 +753,34 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
         </div>
     </div>
 
-    <!-- Load your external JS. Ensure this file exists in the same folder or update path -->
     <script src="market.js" defer></script>
 
     <script>
-        // Inline JS for notification behaviour (keeps logic local in case market.js missing)
+        function bookProvider(providerId) {
+            window.location.href = 'book_provider.php?provider_id=' + providerId;
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             const notifBell = document.getElementById('notification-bell');
-            const notifContainer = document.getElementById('notifContainer'); // wrapper
+            const notifContainer = document.getElementById('notifContainer');
             const notifDropdown = document.getElementById('notificationsDropdown');
             const notifCount = document.getElementById('notificationCount');
 
-            // Toggle dropdown
             notifBell.addEventListener('click', function (e) {
                 e.stopPropagation();
                 notifContainer.classList.toggle('active');
                 notifDropdown.setAttribute('aria-hidden', !notifContainer.classList.contains('active'));
             });
 
-            // Close when clicked outside
             document.addEventListener('click', function () {
                 notifContainer.classList.remove('active');
                 notifDropdown.setAttribute('aria-hidden', 'true');
             });
 
-            // Prevent closing when clicking inside dropdown
             notifDropdown.addEventListener('click', function (e) {
                 e.stopPropagation();
             });
 
-            // Simple polling to refresh count (you must implement check_notifications.php)
             function checkForNewNotifications() {
                 fetch('check_notifications.php')
                     .then(response => response.json())
@@ -688,17 +794,11 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
                             notifCount.style.display = 'none';
                         }
                     })
-                    .catch(err => {
-                        // console.warn('No notifications endpoint or error', err);
-                    });
+                    .catch(err => { });
             }
 
-            // Call once at load (do not set an aggressive interval by default)
             checkForNewNotifications();
-            // Optional: uncomment to poll every 30 seconds
-            // setInterval(checkForNewNotifications, 30000);
 
-            // Mark all as read click handler (will expect mark_all_read.php to exist)
             const markAllBtn = document.getElementById('markAllRead');
             markAllBtn && markAllBtn.addEventListener('click', function (e) {
                 e.preventDefault();
@@ -706,7 +806,6 @@ $userNotifications = getUserNotifications((int) $_SESSION['user_id']);
                     .then(r => r.json())
                     .then(data => {
                         if (data && data.success) {
-                            // Visually mark notifications as read
                             document.querySelectorAll('.notification-item.unread').forEach(el => el.classList.remove('unread'));
                             notifCount.style.display = 'none';
                         }
