@@ -1,0 +1,82 @@
+# API Setup Documentation (not needed in repo)
+API_SETUP.md
+Front-End/API_SETUP.md
+
+# Dependencies
+node_modules/
+Front-End/node_modules/
+vendor/
+Kazi/vendor/
+
+# Build outputs
+dist/
+Front-End/dist/
+build/
+Front-End/build/
+*.min.js
+*.min.css
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+Front-End/.env
+Front-End/.env.local
+Front-End/.env.*.local
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# PHP
+*.cache
+composer.phar
+composer.lock
+
+# Uploads and user-generated content
+Kazi/uploads/
+uploads/
+*.tmp
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Package manager locks (optional - uncomment if you want to ignore)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.bak
+*.backup
+*.old
+
