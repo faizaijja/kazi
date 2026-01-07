@@ -12,42 +12,88 @@ const Register = () => {
     user_type: 'client',
   })
   const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState({})
   const { register } = useAuth()
   const navigate = useNavigate()
 
+  // CLIENT-SIDE: Only UI/UX validation (instant feedback)
+  const validateField = (name, value) => {
+    switch (name) {
+      case 'full_name':
+        return value.trim().length < 2 ? 'Name must be at least 2 characters' : ''
+      case 'email':
+        return !/\S+@\S+\.\S+/.test(value) ? 'Please enter a valid email' : ''
+      case 'password':
+        return value.length < 6 ? 'Password must be at least 6 characters' : ''
+      case 'confirmPassword':
+        return value !== formData.password ? 'Passwords do not match' : ''
+      default:
+        return ''
+    }
+  }
+
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    })
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+    }))
+    
+    // Clear error on change (optional)
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }))
+    }
+  }
+
+  const handleBlur = (e) => {
+    const { name, value } = e.target
+    const error = validateField(name, value)
+    if (error) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: error
+      }))
+    }
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match')
-      return
-    }
+    // Basic client-side validation before sending
+    const newErrors = {}
+    Object.keys(formData).forEach(key => {
+      const error = validateField(key, formData[key])
+      if (error) newErrors[key] = error
+    })
 
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters')
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors)
+      toast.error('Please fix the errors in the form')
       return
     }
 
     setLoading(true)
 
     try {
+      // Send to backend - let it handle business logic validation
       const { confirmPassword, ...userData } = formData
       const result = await register(userData)
+      
       if (result.success) {
         toast.success('Registration successful! Please login.')
         navigate('/login')
       } else {
+        // Handle backend validation errors
+        if (result.field) {
+          setErrors({ [result.field]: result.message })
+        }
         toast.error(result.message || 'Registration failed')
       }
     } catch (error) {
-      toast.error(error.message || 'An error occurred')
+      toast.error('An error occurred. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -73,10 +119,14 @@ const Register = () => {
                 type="text"
                 value={formData.full_name}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 required
-                className="input-field"
+                className={`input-field ${errors.full_name ? 'border-red-500' : ''}`}
                 placeholder="Enter your full name"
               />
+              {errors.full_name && (
+                <p className="mt-1 text-sm text-red-600">{errors.full_name}</p>
+              )}
             </div>
 
             <div>
@@ -89,10 +139,14 @@ const Register = () => {
                 type="email"
                 value={formData.email}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 required
-                className="input-field"
+                className={`input-field ${errors.email ? 'border-red-500' : ''}`}
                 placeholder="Enter your email"
               />
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+              )}
             </div>
 
             <div>
@@ -121,10 +175,14 @@ const Register = () => {
                 type="password"
                 value={formData.password}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 required
-                className="input-field"
+                className={`input-field ${errors.password ? 'border-red-500' : ''}`}
                 placeholder="Enter your password"
               />
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-600">{errors.password}</p>
+              )}
             </div>
 
             <div>
@@ -137,10 +195,14 @@ const Register = () => {
                 type="password"
                 value={formData.confirmPassword}
                 onChange={handleChange}
+                onBlur={handleBlur}
                 required
-                className="input-field"
+                className={`input-field ${errors.confirmPassword ? 'border-red-500' : ''}`}
                 placeholder="Confirm your password"
               />
+              {errors.confirmPassword && (
+                <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>
+              )}
             </div>
 
             <button
@@ -167,4 +229,3 @@ const Register = () => {
 }
 
 export default Register
-

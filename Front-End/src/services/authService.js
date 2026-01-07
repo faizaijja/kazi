@@ -1,25 +1,47 @@
-import api from './api'
+const API_URL = "http://localhost/Kazi";
 
 export const authService = {
-  async login(email, password) {
+  register: async (userData) => {
     try {
-      const response = await api.post('/api/auth/login', {
-        email,
-        password,
-      })
-      return response.data
+      const response = await fetch(`${API_URL}/signup.php`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(userData),
+      });
+
+      const data = await response.json();
+      return data; // { success: true/false, message, field? }
+      
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Login failed')
+      console.error('Registration error:', error);
+      return {
+        success: false,
+        message: "Network error. Please check your connection.",
+      };
     }
   },
 
-  async register(userData) {
+  login: async (email, password) => {
     try {
-      const response = await api.post('/api/auth/register', userData)
-      return response.data
+      const response = await fetch(`${API_URL}/login.php`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+      return data;
+      
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Registration failed')
+      console.error('Login error:', error);
+      return {
+        success: false,
+        message: "Network error. Please check your connection.",
+      };
     }
   },
-}
-
+};

@@ -43,12 +43,18 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     try {
       const response = await authService.register(userData)
-      if (response.success) {
-        return { success: true, message: response.message }
+      
+      // Return the full response including field for error handling
+      return {
+        success: response.success,
+        message: response.message,
+        field: response.field, // Important for showing errors on specific fields
       }
-      return { success: false, message: response.message }
     } catch (error) {
-      return { success: false, message: error.message || 'Registration failed' }
+      return { 
+        success: false, 
+        message: error.message || 'Registration failed' 
+      }
     }
   }
 
@@ -69,4 +75,3 @@ export const AuthProvider = ({ children }) => {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
-
