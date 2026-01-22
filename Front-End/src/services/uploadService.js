@@ -1,4 +1,4 @@
-import api from './api'
+const API_URL = "http://localhost/Kazi";
 
 export const uploadService = {
   async uploadDocument(file, providerId, documentType) {

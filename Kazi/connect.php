@@ -8,7 +8,7 @@ if (!$conn) {
 // PDO connection function (for signup.php)
 function getDbConnection()
 {
-    $host = "localhost";
+    $host = 'localhost';
     $dbname = "kazi";
     $username = "root";
     $password = "";

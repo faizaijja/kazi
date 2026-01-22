@@ -1,9 +1,9 @@
-import api from './api'
+const API_URL = "http://localhost/Kazi";
 
 export const providerService = {
   async getProviders(filters = {}) {
     try {
-      const response = await api.get('/api/providers', { params: filters })
+      const response = await api.get('/providers.php', { params: filters })
       return response.data
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to fetch providers')
@@ -12,7 +12,7 @@ export const providerService = {
 
   async getProviderById(providerId) {
     try {
-      const response = await api.get(`/api/providers/${providerId}`)
+      const response = await api.get(`/providers.php/${providerId}`)
       return response.data
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to fetch provider')
@@ -21,7 +21,7 @@ export const providerService = {
 
   async updateProvider(providerId, providerData) {
     try {
-      const response = await api.put(`/api/providers/${providerId}`, providerData)
+      const response = await api.put(`/providers.php/${providerId}`, providerData)
       return response.data
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Failed to update provider')

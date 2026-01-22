@@ -39,19 +39,21 @@ function App() {
                 </PrivateRoute>
               }
             />
-            <Route
-              path="/jobs/:id"
-              element={
-                <PrivateRoute>
-                  <JobDetail />
-                </PrivateRoute>
-              }
-            />
+         
             <Route
               path="/jobs/create"
               element={
                 <PrivateRoute>
                   <CreateJob />
+                </PrivateRoute>
+              }
+            />
+          
+            <Route
+              path="/jobs/:id"
+              element={
+                <PrivateRoute>
+                  <JobDetail />
                 </PrivateRoute>
               }
             />
@@ -97,4 +99,3 @@ function App() {
 }
 
 export default App
-

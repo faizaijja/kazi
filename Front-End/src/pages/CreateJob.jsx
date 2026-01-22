@@ -13,10 +13,12 @@ const CreateJob = () => {
     title: '',
     description: '',
     category_id: '',
+    location_id: '',
     budget_min: '',
     budget_max: '',
     preferred_date: '',
-    urgency: 'medium',
+    preferred_time: '',
+    urgency: 'normal',
   })
 
   const handleChange = (e) => {
@@ -34,9 +36,13 @@ const CreateJob = () => {
       const jobData = {
         ...formData,
         client_id: user.user_id,
-        category_id: parseInt(formData.category_id),
-        budget_min: parseFloat(formData.budget_min),
-        budget_max: parseFloat(formData.budget_max),
+        category_id: formData.category_id ? parseInt(formData.category_id) : null,
+        location_id: formData.location_id ? parseInt(formData.location_id) : null,
+        budget_min: formData.budget_min ? parseFloat(formData.budget_min) : null,
+        budget_max: formData.budget_max ? parseFloat(formData.budget_max) : null,
+        preferred_date: formData.preferred_date || null,
+        preferred_time: formData.preferred_time || null,
+        urgency: formData.urgency || 'normal',
       }
 
       const response = await jobService.createJob(jobData)
@@ -85,30 +91,34 @@ const CreateJob = () => {
           />
         </div>
 
-        <div>
-          <label htmlFor="category_id" className="block text-sm font-medium text-gray-700 mb-2">
-            Category *
-          </label>
-          <select
-            id="category_id"
-            name="category_id"
-            value={formData.category_id}
-            onChange={handleChange}
-            required
-            className="input-field"
-          >
-            <option value="">Select a category</option>
-            <option value="1">Plumbing</option>
-            <option value="2">Electrical</option>
-            <option value="3">Landscaping</option>
-            <option value="4">Carpentry</option>
-            <option value="5">Cleaning</option>
-            <option value="6">Painting</option>
-            <option value="7">IT Support</option>
-            <option value="8">Appliance Repair</option>
-            <option value="9">Auto Mechanic</option>
-            <option value="10">Security</option>
-          </select>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="category_id" className="block text-sm font-medium text-gray-700 mb-2">
+              Category *
+            </label>
+            <select
+              id="category_id"
+              name="category_id"
+              value={formData.category_id}
+              onChange={handleChange}
+              required
+              className="input-field"
+            >
+              <option value="">Select a category</option>
+              <option value="1">Plumbing</option>
+              <option value="2">Electrical</option>
+              <option value="3">Landscaping</option>
+              <option value="4">Carpentry</option>
+              <option value="5">Cleaning</option>
+              <option value="6">Painting</option>
+              <option value="7">IT Support</option>
+              <option value="8">Appliance Repair</option>
+              <option value="9">Auto Mechanic</option>
+              <option value="10">Security</option>
+            </select>
+          </div>
+
+         
         </div>
 
         <div>
@@ -140,6 +150,8 @@ const CreateJob = () => {
               onChange={handleChange}
               className="input-field"
               placeholder="0"
+              min="0"
+              step="100"
             />
           </div>
 
@@ -155,6 +167,8 @@ const CreateJob = () => {
               onChange={handleChange}
               className="input-field"
               placeholder="0"
+              min="0"
+              step="100"
             />
           </div>
         </div>
@@ -171,26 +185,41 @@ const CreateJob = () => {
               value={formData.preferred_date}
               onChange={handleChange}
               className="input-field"
+              min={new Date().toISOString().split('T')[0]}
             />
           </div>
 
           <div>
-            <label htmlFor="urgency" className="block text-sm font-medium text-gray-700 mb-2">
-              Urgency Level
+            <label htmlFor="preferred_time" className="block text-sm font-medium text-gray-700 mb-2">
+              Preferred Time
             </label>
-            <select
-              id="urgency"
-              name="urgency"
-              value={formData.urgency}
+            <input
+              id="preferred_time"
+              name="preferred_time"
+              type="time"
+              value={formData.preferred_time}
               onChange={handleChange}
               className="input-field"
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="emergency">Emergency</option>
-            </select>
+            />
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="urgency" className="block text-sm font-medium text-gray-700 mb-2">
+            Urgency Level
+          </label>
+          <select
+            id="urgency"
+            name="urgency"
+            value={formData.urgency}
+            onChange={handleChange}
+            className="input-field"
+          >
+            <option value="low">Low - Can wait a few days</option>
+            <option value="normal">Normal - Within a week</option>
+            <option value="high">High - Need it soon</option>
+            <option value="emergency">Emergency - Need it now!</option>
+          </select>
         </div>
 
         <div className="flex space-x-4 pt-4">
@@ -215,4 +244,3 @@ const CreateJob = () => {
 }
 
 export default CreateJob
-
